@@ -1,0 +1,98 @@
+name: Seplat Ecosystem Delivery Engine
+
+on:
+  push:
+    branches:
+      - main
+
+
+jobs:
+
+  infrastructure-audit:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+        with:
+          terraform_version: 1.8.0
+
+
+      - name: Validate Terraform
+        run: |
+
+          cd terraform
+
+          terraform init -backend=false
+
+          terraform validate
+
+
+  build-and-ship:
+
+    needs: infrastructure-audit
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+
+      - name: Build and push Docker images
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+
+        run: |
+
+          for service in frontend backend ml-service; do
+
+            docker build \
+              -t $REGISTRY/seplat-$service:latest \
+              ./$service
+
+            docker push \
+              $REGISTRY/seplat-$service:latest
+
+          done
+
+
+      - name: Force ECS deployments
+        run: |
+
+          aws ecs update-service \
+            --cluster seplat-cluster \
+            --service seplat-frontend-service \
+            --force-new-deployment
+
+          aws ecs update-service \
+            --cluster seplat-cluster \
+            --service seplat-backend-service \
+            --force-new-deployment
+
+          aws ecs update-service \
+            --cluster seplat-cluster \
+            --service seplat-ml-service-service \
+            --force-new-deployment

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Seplat Energy - Operations Control Center</title>
+
+    <style>
+        :root {
+            --seplat-green: #006A4E;
+            --seplat-orange: #FF6600;
+            --dark-bg: #121212;
+            --panel-bg: #1E1E1E;
+            --text-light: #E0E0E0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--dark-bg);
+            color: var(--text-light);
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            background-color: var(--seplat-green);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 4px solid var(--seplat-orange);
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 1px;
+        }
+
+        .container {
+            padding: 30px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background-color: var(--panel-bg);
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            border-left: 5px solid var(--seplat-green);
+        }
+
+        .card.predictive {
+            border-left-color: var(--seplat-orange);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #FFF;
+            font-size: 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            color: #AAA;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 10px;
+            background-color: #2D2D2D;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: white;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: var(--seplat-green);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: bold;
+            width: 100%;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background-color: #00523A;
+        }
+
+        .predictive button {
+            background-color: var(--seplat-orange);
+        }
+
+        .predictive button:hover {
+            background-color: #CC5200;
+        }
+
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 13px;
+        }
+
+        .logs-table th,
+        .logs-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+
+        .logs-table th {
+            background-color: #252525;
+            color: var(--seplat-orange);
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .badge.normal {
+            background-color: rgba(0, 106, 78, 0.2);
+            color: #00FF9D;
+        }
+
+        .badge.warning {
+            background-color: rgba(255, 102, 0, 0.2);
+            color: #FF9955;
+        }
+
+        #predictionResult {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            header {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>
+        SEPLAT ENERGY
+        <span>// Operations Hub</span>
+    </h1>
+
+    <div id="connectionStatus">
+        System State: Online
+    </div>
+</header>
+
+<div class="container">
+
+    <!-- Production Logs -->
+
+    <div class="card">
+
+        <h2>📊 Real-Time Daily Logging System</h2>
+
+        <form id="logForm">
+
+            <div class="form-group">
+                <label>Platform Asset Designation</label>
+
+                <select id="assetName">
+                    <option value="OML-4">
+                        OML-4 (Western Delta)
+                    </option>
+
+                    <option value="OML-38">
+                        OML-38 (Sapele Field)
+                    </option>
+
+                    <option value="OML-41">
+                        OML-41 (Amukpe Flow Station)
+                    </option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    Gross Extraction Count (Barrels/Day)
+                </label>
+
+                <input
+                    type="number"
+                    id="barrels"
+                    value="12500"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label>
+                    Operating Pressure Matrix (PSI)
+                </label>
+
+                <input
+                    type="number"
+                    id="pressure"
+                    value="420"
+                    required
+                >
+            </div>
+
+            <button type="submit">
+                Publish Metrics Matrix
+            </button>
+
+        </form>
+
+        <h2>Recent Operational Submissions</h2>
+
+        <table class="logs-table">
+
+            <thead>
+                <tr>
+                    <th>Asset</th>
+                    <th>Barrels/Day</th>
+                    <th>Pressure</th>
+                </tr>
+            </thead>
+
+            <tbody id="logTableBody">
+            </tbody>
+
+        </table>
+
+    </div>
+
+
+    <!-- Machine Learning -->
+
+    <div class="card predictive">
+
+        <h2>
+            🤖 Intelligent Downhole Maintenance Inference Engine
+        </h2>
+
+        <form id="predictForm">
+
+            <div class="form-group">
+
+                <label>
+                    Casing Line Vibration Frequency (Hz)
+                </label>
+
+                <input
+                    type="number"
+                    id="vibration"
+                    value="48"
+                    required
+                >
+
+            </div>
+
+            <div class="form-group">
+
+                <label>
+                    Crude Core Temperature Range (°C)
+                </label>
+
+                <input
+                    type="number"
+                    id="temperature"
+                    value="88"
+                    required
+                >
+
+            </div>
+
+            <button type="submit">
+                Run Real-time Failure Vector Prediction
+            </button>
+
+        </form>
+
+        <div id="predictionResult"></div>
+
+    </div>
+
+</div>
+
+<script src="app.js"></script>
+
+</body>
+</html>

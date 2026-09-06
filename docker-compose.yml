@@ -1,0 +1,70 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+
+    container_name: seplat-local-db
+
+    ports:
+      - "5432:5432"
+
+    environment:
+      POSTGRES_DB: seplat_ops
+      POSTGRES_USER: seplat_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U seplat_admin -d seplat_ops"
+        ]
+
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  backend:
+    build: ./backend
+
+    container_name: seplat-backend-api
+
+    ports:
+      - "5000:5000"
+
+    environment:
+      DATABASE_URL: postgresql://seplat_admin:${POSTGRES_PASSWORD}@postgres:5432/seplat_ops
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+
+  ml-service:
+    build: ./ml-service
+
+    container_name: seplat-ml-engine
+
+    ports:
+      - "8000:8000"
+
+
+  frontend:
+    build: ./frontend
+
+    container_name: seplat-frontend-ui
+
+    ports:
+      - "80:80"
+
+    depends_on:
+      - backend
+      - ml-service
+
+
+volumes:
+  postgres_data:
