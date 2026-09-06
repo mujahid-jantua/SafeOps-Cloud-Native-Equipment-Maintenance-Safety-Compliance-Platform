@@ -42,4 +42,5 @@ module "compute" {
   ecs_sg_id          = module.security.ecs_sg_id
   execution_role_arn = module.security.execution_role_arn
   db_endpoint        = module.database.db_endpoint
+  db_password = var.db_password
 }
