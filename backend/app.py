@@ -8,6 +8,7 @@ CORS(app)
 
 DB_URL = os.getenv("DATABASE_URL")
 
+
 def init_db():
     try:
         conn = psycopg2.connect(DB_URL)
@@ -35,6 +36,10 @@ def init_db():
 init_db()
 
 
+# --------------------------------------------------
+# Health Check
+# --------------------------------------------------
+
 @app.route('/api/v1/health', methods=['GET'])
 def health():
     return jsonify({
@@ -43,6 +48,65 @@ def health():
     }), 200
 
 
+# --------------------------------------------------
+# Create Production Log
+# --------------------------------------------------
+
+@app.route('/api/v1/logs', methods=['POST'])
+def create_log():
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                "error": "Request body is required"
+            }), 400
+
+        asset_name = data.get("asset_name")
+        barrels_per_day = data.get("barrels_per_day")
+        pressure_psi = data.get("pressure_psi")
+
+        if not asset_name or barrels_per_day is None or pressure_psi is None:
+            return jsonify({
+                "error": "asset_name, barrels_per_day and pressure_psi are required"
+            }), 400
+
+        conn = psycopg2.connect(DB_URL)
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO production_logs
+            (asset_name, barrels_per_day, pressure_psi)
+            VALUES (%s, %s, %s)
+            RETURNING id;
+        """, (
+            asset_name,
+            barrels_per_day,
+            pressure_psi
+        ))
+
+        log_id = cur.fetchone()[0]
+
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "message": "Production log created successfully",
+            "id": log_id
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+# --------------------------------------------------
+# Get Production Logs
+# --------------------------------------------------
+
 @app.route('/api/v1/operations', methods=['GET'])
 def get_operations():
     try:
@@ -50,7 +114,11 @@ def get_operations():
         cur = conn.cursor()
 
         cur.execute("""
-            SELECT id, asset_name, barrels_per_day, pressure_psi
+            SELECT
+                id,
+                asset_name,
+                barrels_per_day,
+                pressure_psi
             FROM production_logs
             ORDER BY id DESC;
         """)
@@ -78,81 +146,12 @@ def get_operations():
         }), 500
 
 
-@app.route('/api/v1/operations', methods=['POST'])
-def create_operation():
-    try:
-        data = request.get_json()
-
-        asset_name = data.get("asset_name")
-        barrels_per_day = data.get("barrels_per_day")
-        pressure_psi = data.get("pressure_psi")
-
-        conn = psycopg2.connect(DB_URL)
-        cur = conn.cursor()
-
-        cur.execute("""
-            INSERT INTO production_logs
-            (asset_name, barrels_per_day, pressure_psi)
-            VALUES (%s, %s, %s)
-            RETURNING id;
-        """, (
-            asset_name,
-            barrels_per_day,
-            pressure_psi
-        ))
-
-        log_id = cur.fetchone()[0]
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return jsonify({
-            "message": "Production log created successfully",
-            "id": log_id
-        }), 201
-
-    except Exception as e:
-        return jsonify({
-            "error": str(e)
-        }), 500
-
-
-@app.route('/api/v1/logs', methods=['POST'])
-def create_log():
-    return create_operation()
-
-@app.route('/api/v1/operations', methods=['GET'])
-def get_operations():
-    try:
-        conn = psycopg2.connect(DB_URL)
-        cur = conn.cursor()
-
-        cur.execute("""
-            SELECT id, asset_name, barrels_per_day, pressure_psi
-            FROM production_logs
-            ORDER BY id DESC;
-        """)
-
-        rows = cur.fetchall()
-
-        cur.close()
-        conn.close()
-
-        return jsonify([
-            {
-                "id": row[0],
-                "asset_name": row[1],
-                "barrels_per_day": row[2],
-                "pressure_psi": row[3]
-            }
-            for row in rows
-        ]), 200
-
-    except Exception as e:
-        return jsonify({
-            "error": str(e)
-        }), 500
+# --------------------------------------------------
+# Run Application
+# --------------------------------------------------
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(
+        host='0.0.0.0',
+        port=5000
+    )
