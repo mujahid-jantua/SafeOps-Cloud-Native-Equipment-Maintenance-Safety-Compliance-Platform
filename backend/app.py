@@ -122,6 +122,37 @@ def create_operation():
 def create_log():
     return create_operation()
 
+@app.route('/api/v1/operations', methods=['GET'])
+def get_operations():
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT id, asset_name, barrels_per_day, pressure_psi
+            FROM production_logs
+            ORDER BY id DESC;
+        """)
+
+        rows = cur.fetchall()
+
+        cur.close()
+        conn.close()
+
+        return jsonify([
+            {
+                "id": row[0],
+                "asset_name": row[1],
+                "barrels_per_day": row[2],
+                "pressure_psi": row[3]
+            }
+            for row in rows
+        ]), 200
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
