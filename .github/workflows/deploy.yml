@@ -5,7 +5,6 @@ on:
     branches:
       - main
 
-
 jobs:
 
   infrastructure-audit:
@@ -17,21 +16,15 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-
         with:
           terraform_version: 1.8.0
 
-
       - name: Validate Terraform
         run: |
-
           cd terraform
-
           terraform init -backend=false
-
           terraform validate
 
 
@@ -46,20 +39,28 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
-
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      - name: Verify AWS identity
+        run: |
+          aws sts get-caller-identity
+
+      - name: Verify ECR repositories
+        run: |
+          aws ecr describe-repositories \
+            --repository-names \
+              seplat-frontend \
+              seplat-backend \
+              seplat-ml-service
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
 
       - name: Build and push Docker images
         env:
@@ -69,15 +70,18 @@ jobs:
 
           for service in frontend backend ml-service; do
 
+            echo "Building $service..."
+
             docker build \
               -t $REGISTRY/seplat-$service:latest \
               ./$service
+
+            echo "Pushing $service..."
 
             docker push \
               $REGISTRY/seplat-$service:latest
 
           done
-
 
       - name: Force ECS deployments
         run: |
