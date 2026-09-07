@@ -1,12 +1,22 @@
 const API_BASE = window.location.origin;
 
 
+// --------------------------------------------------
 // Load operational logs
+// --------------------------------------------------
+
 async function loadLogs() {
     try {
+
         const res = await fetch(
-            `${API_BASE}/api/v1/logs`
+            `${API_BASE}/api/v1/operations`
         );
+
+        if (!res.ok) {
+            throw new Error(
+                `Failed to load operations: HTTP ${res.status}`
+            );
+        }
 
         const data = await res.json();
 
@@ -14,6 +24,19 @@ async function loadLogs() {
             document.getElementById("logTableBody");
 
         tbody.innerHTML = "";
+
+        if (!Array.isArray(data) || data.length === 0) {
+
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="3">
+                        No operational submissions yet.
+                    </td>
+                </tr>
+            `;
+
+            return;
+        }
 
         data.forEach(log => {
 
@@ -27,15 +50,32 @@ async function loadLogs() {
         });
 
     } catch (err) {
+
         console.error(
             "Error loading log entries:",
             err
         );
+
+        const tbody =
+            document.getElementById("logTableBody");
+
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="3">
+                        Unable to load operational data.
+                    </td>
+                </tr>
+            `;
+        }
     }
 }
 
 
+// --------------------------------------------------
 // Production Log Submission
+// --------------------------------------------------
+
 document
     .getElementById("logForm")
     .addEventListener("submit", async (e) => {
@@ -44,22 +84,24 @@ document
 
         const payload = {
             asset_name:
-                document.getElementById("assetName").value,
+                document.getElementById("assetName").value.trim(),
 
             barrels_per_day:
                 parseInt(
-                    document.getElementById("barrels").value
+                    document.getElementById("barrels").value,
+                    10
                 ),
 
             pressure_psi:
                 parseInt(
-                    document.getElementById("pressure").value
+                    document.getElementById("pressure").value,
+                    10
                 )
         };
 
         try {
 
-            await fetch(
+            const res = await fetch(
                 `${API_BASE}/api/v1/logs`,
                 {
                     method: "POST",
@@ -72,7 +114,27 @@ document
                 }
             );
 
+            const result = await res.json();
+
+            if (!res.ok) {
+                throw new Error(
+                    result.error ||
+                    `Submission failed: HTTP ${res.status}`
+                );
+            }
+
+            console.log(
+                "Production log submitted:",
+                result
+            );
+
+            // Refresh operational submissions
             await loadLogs();
+
+            // Reset form after successful submission
+            document
+                .getElementById("logForm")
+                .reset();
 
         } catch (err) {
 
@@ -80,11 +142,18 @@ document
                 "Error submitting operational data:",
                 err
             );
+
+            alert(
+                `Unable to submit operational data: ${err.message}`
+            );
         }
     });
 
 
+// --------------------------------------------------
 // ML Prediction
+// --------------------------------------------------
+
 document
     .getElementById("predictForm")
     .addEventListener("submit", async (e) => {
@@ -120,6 +189,13 @@ document
 
             const result = await res.json();
 
+            if (!res.ok) {
+                throw new Error(
+                    result.error ||
+                    `Prediction failed: HTTP ${res.status}`
+                );
+            }
+
             const box =
                 document.getElementById(
                     "predictionResult"
@@ -132,7 +208,8 @@ document
                 box.style.backgroundColor =
                     "rgba(255, 102, 0, 0.2)";
 
-                box.style.color = "#FF6600";
+                box.style.color =
+                    "#FF6600";
 
                 box.style.border =
                     "1px solid #FF6600";
@@ -146,7 +223,8 @@ document
                 box.style.backgroundColor =
                     "rgba(0, 106, 78, 0.2)";
 
-                box.style.color = "#00FF9D";
+                box.style.color =
+                    "#00FF9D";
 
                 box.style.border =
                     "1px solid #006A4E";
@@ -162,8 +240,26 @@ document
                 "ML prediction error:",
                 err
             );
+
+            const box =
+                document.getElementById(
+                    "predictionResult"
+                );
+
+            if (box) {
+                box.style.display = "block";
+                box.innerText =
+                    `Prediction error: ${err.message}`;
+            }
         }
     });
 
 
-window.onload = loadLogs;
+// --------------------------------------------------
+// Initial page load
+// --------------------------------------------------
+
+window.addEventListener(
+    "load",
+    loadLogs
+);
