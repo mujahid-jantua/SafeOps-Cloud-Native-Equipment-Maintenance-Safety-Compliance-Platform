@@ -1,17 +1,20 @@
-resource "aws_ecr_repository" "repo" {
+data "aws_ecr_repository" "repo" {
   for_each = toset([
     "frontend",
     "backend",
     "ml-service"
   ])
 
-  name                 = "seplat-${each.key}"
-  image_tag_mutability = "MUTABLE"
-  force_delete         = true
+  name = "seplat-${each.key}"
 }
 
 resource "aws_ecs_cluster" "cluster" {
   name = "seplat-cluster"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
 resource "aws_cloudwatch_log_group" "logs" {
@@ -50,6 +53,8 @@ resource "aws_lb_target_group" "tg" {
   vpc_id      = var.vpc_id
   target_type = "ip"
 
+  deregistration_delay = 30
+
   health_check {
     path = each.key == "frontend" ? "/" : (
       each.key == "backend"
@@ -60,7 +65,8 @@ resource "aws_lb_target_group" "tg" {
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
-    unhealthy_threshold = 2
+    unhealthy_threshold = 3
+    matcher             = "200-399"
   }
 }
 
@@ -132,7 +138,7 @@ resource "aws_ecs_task_definition" "task" {
     {
       name = "seplat-${each.key}"
 
-      image = "${aws_ecr_repository.repo[each.key].repository_url}:latest"
+      image = "${data.aws_ecr_repository.repo[each.key].repository_url}:latest"
 
       essential = true
 
@@ -141,6 +147,8 @@ resource "aws_ecs_task_definition" "task" {
           containerPort = each.key == "frontend" ? 80 : (
             each.key == "backend" ? 5000 : 8000
           )
+
+          protocol = "tcp"
         }
       ]
 
@@ -182,6 +190,8 @@ resource "aws_ecs_service" "service" {
   desired_count = 1
   launch_type   = "FARGATE"
 
+  health_check_grace_period_seconds = 60
+
   network_configuration {
     subnets = var.subnet_ids
 
@@ -201,5 +211,8 @@ resource "aws_ecs_service" "service" {
       each.key == "backend" ? 5000 : 8000
     )
   }
-}
 
+  depends_on = [
+    aws_lb_listener.http
+  ]
+}

@@ -23,6 +23,10 @@ async function loadLogs() {
         const tbody =
             document.getElementById("logTableBody");
 
+        if (!tbody) {
+            return;
+        }
+
         tbody.innerHTML = "";
 
         if (!Array.isArray(data) || data.length === 0) {
@@ -30,7 +34,7 @@ async function loadLogs() {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="3">
-                        No operational submissions yet.
+                        No operational submissions found.
                     </td>
                 </tr>
             `;
@@ -38,21 +42,23 @@ async function loadLogs() {
             return;
         }
 
-        data.forEach(log => {
+        data.forEach((item) => {
 
-            tbody.innerHTML += `
-                <tr>
-                    <td>${log.asset_name}</td>
-                    <td>${log.barrels_per_day} bbl</td>
-                    <td>${log.pressure_psi} PSI</td>
-                </tr>
+            const row = document.createElement("tr");
+
+            row.innerHTML = `
+                <td>${item.asset_name ?? "-"}</td>
+                <td>${item.barrels_per_day ?? "-"}</td>
+                <td>${item.pressure_psi ?? "-"}</td>
             `;
+
+            tbody.appendChild(row);
         });
 
     } catch (err) {
 
         console.error(
-            "Error loading log entries:",
+            "Load logs error:",
             err
         );
 
@@ -60,10 +66,11 @@ async function loadLogs() {
             document.getElementById("logTableBody");
 
         if (tbody) {
+
             tbody.innerHTML = `
                 <tr>
                     <td colspan="3">
-                        Unable to load operational data.
+                        Failed to load operational logs.
                     </td>
                 </tr>
             `;
@@ -107,51 +114,72 @@ document
                     method: "POST",
 
                     headers: {
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
                     },
 
                     body: JSON.stringify(payload)
                 }
             );
 
-            const result = await res.json();
+            // Read the response as text first.
+            // This prevents a JSON parse error when the
+            // backend returns HTML or another non-JSON response.
+            const responseText = await res.text();
 
-            if (!res.ok) {
+            let result = {};
+
+            try {
+                result = responseText
+                    ? JSON.parse(responseText)
+                    : {};
+            } catch (parseError) {
+
+                console.error(
+                    "Backend returned non-JSON response:",
+                    responseText
+                );
+
                 throw new Error(
-                    result.error ||
-                    `Submission failed: HTTP ${res.status}`
+                    `Server returned an invalid response (HTTP ${res.status})`
                 );
             }
 
-            console.log(
-                "Production log submitted:",
-                result
+            if (!res.ok) {
+
+                throw new Error(
+                    result.error ||
+                    result.message ||
+                    result.detail ||
+                    `HTTP ${res.status}`
+                );
+            }
+
+            alert(
+                "Operational metrics published successfully."
             );
 
-            // Refresh operational submissions
-            await loadLogs();
-
-            // Reset form after successful submission
             document
                 .getElementById("logForm")
                 .reset();
 
+            await loadLogs();
+
         } catch (err) {
 
             console.error(
-                "Error submitting operational data:",
+                "Production log submission error:",
                 err
             );
 
             alert(
-                `Unable to submit operational data: ${err.message}`
+                `Submission failed: ${err.message}`
             );
         }
     });
 
-
 // --------------------------------------------------
-// ML Prediction
+// Machine Learning Prediction
 // --------------------------------------------------
 
 document
@@ -160,19 +188,42 @@ document
 
         e.preventDefault();
 
-        const payload = {
-            vibration_hz:
-                parseFloat(
-                    document.getElementById("vibration").value
-                ),
-
-            temperature_celsius:
-                parseFloat(
-                    document.getElementById("temperature").value
-                )
-        };
+        const box =
+            document.getElementById("predictionResult");
 
         try {
+
+            // IMPORTANT:
+            // These field names MUST match the ML API.
+            const payload = {
+                vibration_hz:
+                    Number(
+                        document.getElementById("vibration").value
+                    ),
+
+                temperature_celsius:
+                    Number(
+                        document.getElementById("temperature").value
+                    )
+            };
+
+            // Show processing status
+            if (box) {
+
+                box.style.display = "block";
+
+                box.style.backgroundColor =
+                    "rgba(255, 102, 0, 0.15)";
+
+                box.style.color =
+                    "#FF9955";
+
+                box.style.border =
+                    "1px solid #FF6600";
+
+                box.innerText =
+                    "Running predictive analysis...";
+            }
 
             const res = await fetch(
                 `${API_BASE}/api/ml/predict`,
@@ -190,18 +241,24 @@ document
             const result = await res.json();
 
             if (!res.ok) {
+
                 throw new Error(
                     result.error ||
+                    result.message ||
+                    JSON.stringify(result) ||
                     `Prediction failed: HTTP ${res.status}`
                 );
             }
 
-            const box =
-                document.getElementById(
-                    "predictionResult"
-                );
+            if (!box) {
+                return;
+            }
 
             box.style.display = "block";
+
+            // --------------------------------------------------
+            // Critical condition
+            // --------------------------------------------------
 
             if (result.downtime_imminent) {
 
@@ -216,9 +273,18 @@ document
 
                 box.innerText =
                     `CRITICAL WARNING: Maintenance Required! ` +
-                    `Confidence: ${(result.failure_probability * 100).toFixed(1)}%`;
+                    `Confidence: ` +
+                    `${(result.failure_probability * 100).toFixed(1)}%` +
+                    `\nRecommendation: ` +
+                    `${result.recommendation}`;
 
-            } else {
+            }
+
+            // --------------------------------------------------
+            // Stable condition
+            // --------------------------------------------------
+
+            else {
 
                 box.style.backgroundColor =
                     "rgba(0, 106, 78, 0.2)";
@@ -231,7 +297,9 @@ document
 
                 box.innerText =
                     `System Stable. Failure Risk Factor: ` +
-                    `${(result.failure_probability * 100).toFixed(1)}%`;
+                    `${(result.failure_probability * 100).toFixed(1)}%` +
+                    `\nRecommendation: ` +
+                    `${result.recommendation}`;
             }
 
         } catch (err) {
@@ -241,13 +309,19 @@ document
                 err
             );
 
-            const box =
-                document.getElementById(
-                    "predictionResult"
-                );
-
             if (box) {
+
                 box.style.display = "block";
+
+                box.style.backgroundColor =
+                    "rgba(255, 0, 0, 0.15)";
+
+                box.style.color =
+                    "#FF6666";
+
+                box.style.border =
+                    "1px solid #FF6666";
+
                 box.innerText =
                     `Prediction error: ${err.message}`;
             }
