@@ -5,9 +5,18 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: seplat-cluster
+
 jobs:
 
   infrastructure-audit:
+
+    name: Infrastructure Audit
 
     runs-on: ubuntu-latest
 
@@ -21,14 +30,18 @@ jobs:
         with:
           terraform_version: 1.8.0
 
-      - name: Validate Terraform
-        run: |
-          cd terraform
-          terraform init -backend=false
-          terraform validate
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: terraform
+        run: terraform validate
 
 
   build-and-ship:
+
+    name: Build and Deploy
 
     needs: infrastructure-audit
 
@@ -39,16 +52,19 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
+
 
       - name: Verify AWS identity
         run: |
           aws sts get-caller-identity
+
 
       - name: Verify ECR repositories
         run: |
@@ -56,47 +72,122 @@ jobs:
             --repository-names \
               seplat-frontend \
               seplat-backend \
-              seplat-ml-service
+              seplat-ml-service \
+            --region $AWS_REGION
+
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker images
+
+      - name: Build and Push Frontend
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-
         run: |
+          docker build \
+            -t $REGISTRY/seplat-frontend:latest \
+            ./frontend
 
-          for service in frontend backend ml-service; do
+          docker push \
+            $REGISTRY/seplat-frontend:latest
 
-            echo "Building $service..."
 
-            docker build \
-              -t $REGISTRY/seplat-$service:latest \
-              ./$service
-
-            echo "Pushing $service..."
-
-            docker push \
-              $REGISTRY/seplat-$service:latest
-
-          done
-
-      - name: Force ECS deployments
+      - name: Build and Push Backend
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
+          docker build \
+            -t $REGISTRY/seplat-backend:latest \
+            ./backend
 
+          docker push \
+            $REGISTRY/seplat-backend:latest
+
+
+      - name: Build and Push ML Service
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build \
+            -t $REGISTRY/seplat-ml-service:latest \
+            ./ml-service
+
+          docker push \
+            $REGISTRY/seplat-ml-service:latest
+
+
+      - name: Verify ECR Images
+        run: |
+          echo "Checking frontend..."
+          aws ecr describe-images \
+            --repository-name seplat-frontend \
+            --image-ids imageTag=latest \
+            --region $AWS_REGION
+
+          echo "Checking backend..."
+          aws ecr describe-images \
+            --repository-name seplat-backend \
+            --image-ids imageTag=latest \
+            --region $AWS_REGION
+
+          echo "Checking ML service..."
+          aws ecr describe-images \
+            --repository-name seplat-ml-service \
+            --image-ids imageTag=latest \
+            --region $AWS_REGION
+
+
+      - name: Deploy Frontend
+        run: |
           aws ecs update-service \
-            --cluster seplat-cluster \
+            --cluster $ECS_CLUSTER \
             --service seplat-frontend-service \
-            --force-new-deployment
+            --force-new-deployment \
+            --region $AWS_REGION
 
+
+      - name: Deploy Backend
+        run: |
           aws ecs update-service \
-            --cluster seplat-cluster \
+            --cluster $ECS_CLUSTER \
             --service seplat-backend-service \
-            --force-new-deployment
+            --force-new-deployment \
+            --region $AWS_REGION
 
+
+      - name: Deploy ML Service
+        run: |
           aws ecs update-service \
-            --cluster seplat-cluster \
+            --cluster $ECS_CLUSTER \
             --service seplat-ml-service-service \
-            --force-new-deployment
+            --force-new-deployment \
+            --region $AWS_REGION
+
+
+      - name: Wait for ECS services
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services \
+              seplat-frontend-service \
+              seplat-backend-service \
+              seplat-ml-service-service \
+            --region $AWS_REGION
+
+
+      - name: Deployment Summary
+        run: |
+          echo "======================================"
+          echo " SEPLAT DEPLOYMENT SUCCESSFUL"
+          echo "======================================"
+
+          aws ecs describe-services \
+            --cluster $ECS_CLUSTER \
+            --services \
+              seplat-frontend-service \
+              seplat-backend-service \
+              seplat-ml-service-service \
+            --region $AWS_REGION \
+            --query 'services[*].[serviceName,runningCount,desiredCount,status]' \
+            --output table
